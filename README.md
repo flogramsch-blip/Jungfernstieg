@@ -57,6 +57,7 @@ auf dem Startbildschirm.
 | Abzüge mit Presets (Fenster, Zimmertür, Terrassentür, freie Fläche) | fertig |
 | Netto groß / brutto klein, Decke und Boden getrennt | fertig |
 | Ein Preis pro m² und eine Standardhöhe fürs ganze Projekt | fertig |
+| Je Raum wählbar, ob die Deckenfläche mitberechnet wird | fertig |
 | Grundriss automatisch aus der Wandliste, Öffnungen mit Abstand ab Ecke | fertig |
 | Speicherung auf dem Gerät, Fotos in IndexedDB | fertig |
 | Excel-/CSV-Export mit Abzügen im Detail | fertig |
@@ -71,6 +72,11 @@ alle Flächen 0,0 m². Ein vorbelegter 4 × 3-m-Raum sah aus, als hätte
 „Zurücksetzen" nichts getan. Erhalten bleiben nur der Name und die
 Standardhöhe des Projekts. Solange keine Maße erfasst sind, zeigen Grundriss
 und PDF einen Hinweis statt einer entarteten Zeichnung.
+
+Die Deckenfläche wird immer gemessen und ausgewiesen; ob sie in die
+abrechenbare Fläche und damit in den Preis einfließt, entscheidet die Auswahl
+je Raum. Räume aus älteren Ständen rechnen die Decke weiter mit, so wie
+bisher. In CSV und PDF ist erkennbar, bei welchem Raum sie zählt.
 
 `render()` wirft die gesamte Oberfläche weg und baut sie neu auf. Jedes Feld
 trägt deshalb ein stabiles `data-fkey`, über das Fokus und Cursorposition

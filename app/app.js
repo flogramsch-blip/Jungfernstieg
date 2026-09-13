@@ -55,6 +55,7 @@ function mkRoom(name, lens, height) {
     id: nid(), name, height,
     walls: (lens || EMPTY_WALLS).map(l => ({ id: nid(), len: l, turn: 'r' })),
     openings: [], photos: [], note: '',
+    ceiling: true,   // does the ceiling count towards the billable area?
   };
 }
 
@@ -100,6 +101,8 @@ function normalizeRoom(r) {
     openings: Array.isArray(r.openings) ? r.openings : [],
     photos: Array.isArray(r.photos) ? r.photos : [],
     note: r.note || '',
+    // Rooms saved before this option existed always counted the ceiling.
+    ceiling: r.ceiling !== false,
   };
 }
 
@@ -364,16 +367,26 @@ function calc(room, price) {
   const abzug = room.openings.reduce((s, o) => s + (o.w || 0) * (o.h || 0) * (o.count || 0), 0);
   const netto = Math.max(0, brutto - abzug);
   const decke = g.floor;
-  const abrechnung = netto + decke;
-  return { g, umfang, brutto, abzug, netto, decke, boden: g.floor, abrechnung, preis: abrechnung * (price || 0) };
+  const deckeZaehlt = room.ceiling !== false;
+  const deckeAnteil = deckeZaehlt ? decke : 0;
+  const abrechnung = netto + deckeAnteil;
+  return {
+    g, umfang, brutto, abzug, netto,
+    decke, deckeZaehlt, deckeAnteil,
+    boden: g.floor, abrechnung, preis: abrechnung * (price || 0),
+  };
 }
 
 function totals() {
   const project = getProject();
   return project.rooms.reduce((a, r) => {
     const c = calc(r, project.price);
-    return { brutto: a.brutto + c.brutto, netto: a.netto + c.netto, abzug: a.abzug + c.abzug, decke: a.decke + c.decke, preis: a.preis + c.preis };
-  }, { brutto: 0, netto: 0, abzug: 0, decke: 0, preis: 0 });
+    return {
+      brutto: a.brutto + c.brutto, netto: a.netto + c.netto, abzug: a.abzug + c.abzug,
+      decke: a.decke + c.decke, deckeAnteil: a.deckeAnteil + c.deckeAnteil,
+      preis: a.preis + c.preis,
+    };
+  }, { brutto: 0, netto: 0, abzug: 0, decke: 0, deckeAnteil: 0, preis: 0 });
 }
 
 function plan(room, c) {
@@ -420,15 +433,15 @@ function plan(room, c) {
 
 function exportCsv() {
   const sep = ';';
-  const lines = [['Raum', 'Hoehe m', 'Umfang m', 'Brutto m2', 'Abzuege m2', 'Netto m2', 'Decke m2', 'Boden m2', 'Preis/m2', 'Summe EUR'].join(sep)];
+  const lines = [['Raum', 'Hoehe m', 'Umfang m', 'Brutto m2', 'Abzuege m2', 'Netto m2', 'Decke m2', 'Decke berechnet', 'Abrechenbar m2', 'Boden m2', 'Preis/m2', 'Summe EUR'].join(sep)];
   const project = getProject();
   project.rooms.forEach(r => {
     const c = calc(r);
-    lines.push([r.name, nf(r.height), nf(c.umfang), nf(c.brutto), nf(c.abzug), nf(c.netto), nf(c.decke), nf(c.boden), nf(project.price), nf(c.preis)].join(sep));
-    r.openings.forEach(o => lines.push(['  Abzug: ' + o.label, '', '', nf(o.w) + ' x ' + nf(o.h), 'Anzahl ' + o.count, nf(o.w * o.h * o.count), '', '', '', ''].join(sep)));
+    lines.push([r.name, nf(r.height), nf(c.umfang), nf(c.brutto), nf(c.abzug), nf(c.netto), nf(c.decke), c.deckeZaehlt ? 'ja' : 'nein', nf(c.abrechnung), nf(c.boden), nf(project.price), nf(c.preis)].join(sep));
+    r.openings.forEach(o => lines.push(['  Abzug: ' + o.label, '', '', nf(o.w) + ' x ' + nf(o.h), 'Anzahl ' + o.count, nf(o.w * o.h * o.count), '', '', '', '', '', ''].join(sep)));
   });
   const t = totals();
-  lines.push(['Summe', '', '', nf(t.brutto), nf(t.abzug), nf(t.netto), nf(t.decke), '', '', nf(t.preis)].join(sep));
+  lines.push(['Summe', '', '', nf(t.brutto), nf(t.abzug), nf(t.netto), nf(t.decke), nf(t.deckeAnteil) + ' berechnet', nf(t.netto + t.deckeAnteil), '', '', nf(t.preis)].join(sep));
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   const url = URL.createObjectURL(blob);
@@ -498,22 +511,22 @@ function buildPrintSheet(photoUrls) {
     el('div', { class: 'p-tiles' }, [
       printTile('Netto-Wandfläche', nf(t.netto, 1) + ' m²'),
       printTile('Brutto-Wandfläche', nf(t.brutto, 1) + ' m²'),
-      printTile('Deckenfläche', nf(t.decke, 1) + ' m²'),
+      printTile(t.deckeAnteil < t.decke - 0.005 ? 'Decke berechnet' : 'Deckenfläche', nf(t.deckeAnteil, 1) + ' m²'),
       printTile('Räume', String(project.rooms.length)),
     ]),
     el('div', { class: 'p-table' }, [
       printRow(['Raum', 'Brutto m²', 'Abzüge m²', 'Netto m²', 'Decke m²', 'Summe €'], 'p-row-head'),
       ...project.rooms.map(r => {
         const c = calc(r, project.price);
-        return printRow([r.name, nf(c.brutto, 1), nf(c.abzug, 1), nf(c.netto, 1), nf(c.decke, 1), nf(c.preis)]);
+        return printRow([r.name, nf(c.brutto, 1), nf(c.abzug, 1), nf(c.netto, 1), c.deckeZaehlt ? nf(c.decke, 1) : '—', nf(c.preis)]);
       }),
-      printRow(['Gesamt', nf(t.brutto, 1), nf(t.abzug, 1), nf(t.netto, 1), nf(t.decke, 1), nf(t.preis)], 'p-row-sum'),
+      printRow(['Gesamt', nf(t.brutto, 1), nf(t.abzug, 1), nf(t.netto, 1), nf(t.deckeAnteil, 1), nf(t.preis)], 'p-row-sum'),
     ]),
     el('div', { class: 'p-total' }, [
       el('div', { class: 'k' }, 'Gesamtsumme'),
       el('div', { class: 'v' }, nf(t.preis) + ' €'),
     ]),
-    el('p', { class: 'p-legal' }, 'Netto = Brutto-Wandfläche abzüglich Fenster, Türen und freier Flächen. Abgerechnet werden Netto-Wandfläche und Deckenfläche. Alle Maße in Metern, Flächen in m². Angebot freibleibend.'),
+    el('p', { class: 'p-legal' }, 'Netto = Brutto-Wandfläche abzüglich Fenster, Türen und freier Flächen. Abgerechnet wird die Netto-Wandfläche, die Deckenfläche nur bei den Räumen, in denen sie ausgewiesen ist („—" bedeutet: nicht berechnet). Alle Maße in Metern, Flächen in m². Angebot freibleibend.'),
   ]);
 
   const roomPages = project.rooms.map(room => {
@@ -528,9 +541,9 @@ function buildPrintSheet(photoUrls) {
       printRow(['Brutto-Wandfläche', nf(c.brutto, 2) + ' m²']),
       printRow(['Abzüge', '− ' + nf(c.abzug, 2) + ' m²']),
       printRow(['Netto-Wandfläche', nf(c.netto, 2) + ' m²'], 'p-row-sum'),
-      printRow(['Deckenfläche', nf(c.decke, 2) + ' m²']),
+      printRow([c.deckeZaehlt ? 'Deckenfläche' : 'Deckenfläche (nicht berechnet)', nf(c.decke, 2) + ' m²']),
       printRow(['Bodenfläche', nf(c.boden, 2) + ' m²']),
-      printRow(['Abrechenbar (Wand + Decke)', nf(c.abrechnung, 2) + ' m²']),
+      printRow([c.deckeZaehlt ? 'Abrechenbar (Wand + Decke)' : 'Abrechenbar (nur Wand)', nf(c.abrechnung, 2) + ' m²']),
       printRow(['Preis pro m²', nf(project.price) + ' €']),
       printRow(['Summe', nf(c.preis) + ' €'], 'p-row-sum'),
     ]);
@@ -836,7 +849,13 @@ function renderProjektView() {
     ]),
     el('div', { class: 'sub-line' }, `brutto ${nf(t.brutto, 1)} m² · Abzüge ${nf(t.abzug, 1)} m²`),
     el('div', { class: 'tile-grid' }, [
-      el('div', { class: 'tile' }, [el('div', { class: 'tile-label' }, 'Decke'), el('div', { class: 'tile-value' }, nf(t.decke, 1) + ' m²')]),
+      el('div', { class: 'tile' }, [
+        el('div', { class: 'tile-label' }, 'Decke'),
+        el('div', { class: 'tile-value' }, nf(t.deckeAnteil, 1) + ' m²'),
+        t.deckeAnteil < t.decke - 0.005
+          ? el('div', { class: 'tile-note' }, 'von ' + nf(t.decke, 1) + ' m² gemessen')
+          : null,
+      ]),
       el('div', { class: 'tile' }, [el('div', { class: 'tile-label' }, 'Räume'), el('div', { class: 'tile-value' }, String(project.rooms.length))]),
     ]),
     el('div', { class: 'tile-row' }, [
@@ -928,7 +947,10 @@ function renderRaumView() {
       el('div', { class: 'item' }, ['Abzüge ', el('b', {}, '−' + nf(c.abzug, 1)), ' m²']),
     ]),
     el('div', { class: 'tile-grid' }, [
-      el('div', { class: 'tile' }, [el('div', { class: 'tile-label' }, 'Decke'), el('div', { class: 'tile-value' }, nf(c.decke, 1) + ' m²')]),
+      el('div', { class: 'tile' + (c.deckeZaehlt ? '' : ' muted') }, [
+        el('div', { class: 'tile-label' }, c.deckeZaehlt ? 'Decke' : 'Decke · zählt nicht'),
+        el('div', { class: 'tile-value' }, nf(c.decke, 1) + ' m²'),
+      ]),
       el('div', { class: 'tile' }, [el('div', { class: 'tile-label' }, 'Boden'), el('div', { class: 'tile-value' }, nf(c.boden, 1) + ' m²')]),
     ]),
     el('div', { class: 'tile-row' }, [el('div', { class: 'k' }, 'Umfang'), el('div', { class: 'v' }, nf(c.umfang) + ' m')]),
@@ -1034,6 +1056,22 @@ function renderRaumView() {
       el('label', { class: 'field' }, [
         el('span', { class: 'field-label' }, 'Preis pro m² · gilt fürs ganze Projekt'),
         numInput(project.price, v => patchProject(p => ({ ...p, price: v })), { fkey: 'room-price' }),
+      ]),
+      el('div', { class: 'field' }, [
+        el('span', { class: 'field-label' }, 'Deckenfläche mitberechnen'),
+        el('div', { class: 'pill-row', style: { marginTop: '6px' } }, [
+          el('button', {
+            class: 'pill-btn' + (c.deckeZaehlt ? ' active' : ''),
+            onClick: () => patchRoom(r => ({ ...r, ceiling: true })),
+          }, 'Ja'),
+          el('button', {
+            class: 'pill-btn' + (c.deckeZaehlt ? '' : ' active'),
+            onClick: () => patchRoom(r => ({ ...r, ceiling: false })),
+          }, 'Nein'),
+        ]),
+        el('div', { class: 'hint-text', style: { marginTop: '6px' } }, c.deckeZaehlt
+          ? 'Abgerechnet werden Netto-Wandfläche + Decke.'
+          : 'Abgerechnet wird nur die Netto-Wandfläche. Die Decke wird weiter gemessen, aber nicht berechnet.'),
       ]),
       el('div', { class: 'tile-row', style: { marginTop: 0 } }, [
         el('div', { class: 'k' }, nf(c.abrechnung, 1) + ' m² abrechenbar'),
@@ -1241,7 +1279,7 @@ function renderExportView() {
           el('div', { class: 'name' }, r.name),
           el('div', { class: 'brutto' }, nf(rc.brutto, 1)),
           el('div', { class: 'netto' }, nf(rc.netto, 1)),
-          el('div', { class: 'decke' }, nf(rc.decke, 1)),
+          el('div', { class: 'decke' }, rc.deckeZaehlt ? nf(rc.decke, 1) : '—'),
         ]);
       }),
     ]),

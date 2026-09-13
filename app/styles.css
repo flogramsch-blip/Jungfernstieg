@@ -453,6 +453,9 @@ textarea.input{padding:12px 14px;font:400 14px/1.5 var(--font-ui);resize:vertica
 .btn-row .btn{flex:1 1 130px}
 /* Align the inputs, not the labels: one label wrapping to a second line
    would otherwise push its field out of step with its neighbour. */
+.tile.muted{opacity:.62}
+.tile-note{font:400 10px/1.3 var(--font-ui);color:var(--text-muted-2);margin-top:3px}
+
 .plan-frame.empty{display:grid;place-items:center;min-height:220px}
 .plan-empty{text-align:center;max-width:260px;display:flex;flex-direction:column;gap:6px;align-items:center}
 .plan-empty .icon{font:400 26px/1 sans-serif;color:var(--text-muted-2)}
